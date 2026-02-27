@@ -10,11 +10,8 @@ public class FastRegex {
     }
 
     public static native long compile(String pattern);
-
     public static native void release(long handle);
-
     public static native boolean matchesUtf8Direct(long handle, ByteBuffer directBuf, int offset, int len);
-
     public static native void batchMatchesUtf8Direct(long handle, ByteBuffer dataBuf, int[] offsets, int[] lengths, long[] outBits);
 
     public static class PackedUtf8 {
