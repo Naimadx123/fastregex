@@ -1,0 +1,36 @@
+name: Build fastregex
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK
+      uses: actions/setup-java@v4
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Build with build.ps1
+      run: .\build.ps1
+      shell: pwsh
+
+    - name: Upload JAR and DLL
+      uses: actions/upload-artifact@v4
+      with:
+        name: fastregex-artifacts
+        path: |
+          dist/fastregex.jar
+          dist/fastregex.dll
