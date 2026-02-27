@@ -7,10 +7,6 @@ edition = "2021"
 name = "fastregex"
 crate-type = ["cdylib"]
 
-[[bin]]
-name = "fastregex-cli"
-path = "src/main.rs"
-
 [dependencies]
 regex = "1.12.3"
 jni = "0.21"
