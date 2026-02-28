@@ -9,18 +9,22 @@ use slab::Slab;
 use std::sync::Arc;
 
 static REGEX_CACHE: Lazy<moka::sync::Cache<String, Arc<Regex>>> = Lazy::new(|| {
+    // Global cache to avoid re-compiling regexes across multiple instances.
     moka::sync::Cache::builder()
         .build()
 });
 
+// A handle table mapping jlong identifiers back to their compiled regex instances.
 static HANDLES: Lazy<RwLock<Slab<Arc<Regex>>>> = Lazy::new(|| RwLock::new(Slab::with_capacity(1024)));
 
+// Converts a 1-based jlong handle into a 0-based slab index.
 fn handle_to_index(handle: jlong) -> Option<usize> {
     if handle <= 0 { None } else { Some((handle as usize) - 1) }
 }
 
 fn get_regex_from_handle(handle: jlong) -> Option<Arc<Regex>> {
     let idx = handle_to_index(handle)?;
+    // Use a read lock to retrieve the regex instance from the global table.
     let table = HANDLES.read();
     table.get(idx).cloned()
 }
@@ -46,6 +50,7 @@ pub extern "system" fn Java_me_naimad_fastregex_FastRegex_compile(
     let re_arc: Arc<Regex> = match REGEX_CACHE.get(&pattern) {
         Some(v) => v,
         None => {
+            // Compile and cache the regex if not already present.
             let compiled = match Regex::new(&pattern) {
                 Ok(r) => Arc::new(r),
                 Err(e) => {
@@ -60,6 +65,7 @@ pub extern "system" fn Java_me_naimad_fastregex_FastRegex_compile(
 
     let mut table = HANDLES.write();
     let idx = table.insert(re_arc);
+    // Return a 1-based handle to avoid 0 being a valid handle.
     (idx as jlong) + 1
 }
 
@@ -73,6 +79,7 @@ pub extern "system" fn Java_me_naimad_fastregex_FastRegex_release(
         throw_iae(&mut env, "Invalid handle");
         return;
     };
+    // Acquire a write lock to remove the instance and free up the slot.
     let mut table = HANDLES.write();
     if table.contains(idx) {
         table.remove(idx);
@@ -96,7 +103,7 @@ pub extern "system" fn Java_me_naimad_fastregex_FastRegex_matchesUtf8Direct(
         }
     };
 
-    // Optimization: Pull address and capacity once to minimize JNI calls.
+    // Access buffer metadata once to avoid redundant JNI calls.
     let base_ptr = match env.get_direct_buffer_address(&direct_buf) {
         Ok(p) => p,
         Err(_) => {
@@ -115,15 +122,13 @@ pub extern "system" fn Java_me_naimad_fastregex_FastRegex_matchesUtf8Direct(
     let off_u = offset as usize;
     let ln_u = len as usize;
 
-    // Fast unsigned bounds check covering both negative values and overflows.
+    // A single check that covers both negative input and potential overflow.
     if off_u > cap || ln_u > cap - off_u {
         throw_iae(&mut env, "offset/len out of bounds");
         return 0;
     }
 
-    // Optimization: Direct pointer addition for slice creation to avoid extra slicing overhead.
-    // Safety: direct_buf is a DirectByteBuffer, base_ptr is its starting address, cap is its capacity.
-    // off_u and ln_u are validated to be within [0, cap].
+    // SAFETY: Bounds were validated above.
     let slice = unsafe { std::slice::from_raw_parts(base_ptr.add(off_u), ln_u) };
 
     if re.is_match(slice) { 1 } else { 0 }
@@ -147,7 +152,7 @@ pub extern "system" fn Java_me_naimad_fastregex_FastRegex_batchMatchesUtf8Direct
         }
     };
 
-    // Optimization: Pull address and capacity once.
+    // Pull buffer metadata once for the whole batch.
     let base_ptr = match env.get_direct_buffer_address(&data_buf) {
         Ok(p) => p,
         Err(_) => {
@@ -198,8 +203,7 @@ pub extern "system" fn Java_me_naimad_fastregex_FastRegex_batchMatchesUtf8Direct
         return;
     }
 
-    // Optimization: Create the data slice once for the whole batch.
-    // Safety: data_buf is a DirectByteBuffer, base_ptr is its starting address, cap is its capacity.
+    // SAFETY: data_buf is a DirectByteBuffer, so base_ptr and cap remain valid for the call.
     let data: &[u8] = unsafe { std::slice::from_raw_parts(base_ptr, cap) };
 
     unsafe {
@@ -225,29 +229,27 @@ pub extern "system" fn Java_me_naimad_fastregex_FastRegex_batchMatchesUtf8Direct
             }
         };
 
-        // Use slices for faster access and to enable compiler optimizations like auto-vectorization.
+        // Accessing as slices helps the compiler optimize and potentially vectorize the loop.
         let offsets_slice = &*offsets_auto;
         let lengths_slice = &*lengths_auto;
         let out_bits_slice = &mut *out_bits_auto;
 
-        // Optimization: Use chunks(64) to iterate over bitset words, simplifying loops and bit logic.
-        // Using zip() for offsets and lengths allows the compiler to optimize access patterns.
+        // Process matches in 64-bit chunks to match the long[] bitset layout.
         for (word_idx, (off_chunk, len_chunk)) in offsets_slice.chunks(64).zip(lengths_slice.chunks(64)).enumerate() {
             let mut word = 0i64;
             for (bit_idx, (&off, &ln)) in off_chunk.iter().zip(len_chunk.iter()).enumerate() {
-                // Optimization: Fast unsigned bounds check covers negative values and overflow.
                 let off_u = off as usize;
                 let ln_u = ln as usize;
 
                 if off_u <= cap && ln_u <= cap - off_u {
-                    // Safety: off_u and ln_u are within data bounds.
+                    // SAFETY: Values are validated to be within data bounds.
                     let slice = data.get_unchecked(off_u..off_u + ln_u);
                     if re.is_match(slice) {
                         word |= 1i64 << bit_idx;
                     }
                 }
             }
-            // word_idx < needed_words <= out_bits_slice.len() is guaranteed.
+            // SAFETY: word_idx is guaranteed to be within bounds.
             *out_bits_slice.get_unchecked_mut(word_idx) = word;
         }
     }
