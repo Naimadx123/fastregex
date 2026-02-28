@@ -73,26 +73,26 @@ FastRegex vs JDK (`matches()` loop):
 
 ### Raw results (ops/ms)
 
-Benchmark                      n regex           Score
-  -------------------------- ----- ---------- ----------
-fastregex_match_only          64 username      535.402
-fastregex_match_only          64 HTTP         1133.116
-fastregex_match_only          64 email         435.196
-fastregex_match_only         512 username       78.851
-fastregex_match_only         512 HTTP          210.821
-fastregex_match_only         512 email          60.727
-fastregex_pack_and_match      64 username      265.278
-fastregex_pack_and_match      64 HTTP          363.485
-fastregex_pack_and_match      64 email         248.459
-fastregex_pack_and_match     512 username       40.504
-fastregex_pack_and_match     512 HTTP           46.034
-fastregex_pack_and_match     512 email          30.162
-jdk_matches_loop              64 username      168.826
-jdk_matches_loop              64 HTTP          356.790
-jdk_matches_loop              64 email         157.884
-jdk_matches_loop             512 username       20.740
-jdk_matches_loop             512 HTTP           43.592
-jdk_matches_loop             512 email          18.363
+| Benchmark | n | regex | Score (ops/ms) |
+| --------- | -:| ----- | --------------:|
+| fastregex_match_only | 64 | ^[A-Za-z0-9_]{3,16}$ | 535.402 |
+| fastregex_match_only | 64 | ^(?:GET\|POST)\s+/[A-Za-z0-9/_-]{1,64}\s+HTTP/1\.[01]$ | 1133.116 |
+| fastregex_match_only | 64 | ^[^@\s]{1,64}@[^@\s]{1,255}$ | 435.196 |
+| fastregex_match_only | 512 | ^[A-Za-z0-9_]{3,16}$ | 78.851 |
+| fastregex_match_only | 512 | ^(?:GET\|POST)\s+/[A-Za-z0-9/_-]{1,64}\s+HTTP/1\.[01]$ | 210.821 |
+| fastregex_match_only | 512 | ^[^@\s]{1,64}@[^@\s]{1,255}$ | 60.727 |
+| fastregex_pack_and_match | 64 | ^[A-Za-z0-9_]{3,16}$ | 265.278 |
+| fastregex_pack_and_match | 64 | ^(?:GET\|POST)\s+/[A-Za-z0-9/_-]{1,64}\s+HTTP/1\.[01]$ | 363.485 |
+| fastregex_pack_and_match | 64 | ^[^@\s]{1,64}@[^@\s]{1,255}$ | 248.459 |
+| fastregex_pack_and_match | 512 | ^[A-Za-z0-9_]{3,16}$ | 40.504 |
+| fastregex_pack_and_match | 512 | ^(?:GET\|POST)\s+/[A-Za-z0-9/_-]{1,64}\s+HTTP/1\.[01]$ | 46.034 |
+| fastregex_pack_and_match | 512 | ^[^@\s]{1,64}@[^@\s]{1,255}$ | 30.162 |
+| jdk_matches_loop | 64 | ^[A-Za-z0-9_]{3,16}$ | 168.826 |
+| jdk_matches_loop | 64 | ^(?:GET\|POST)\s+/[A-Za-z0-9/_-]{1,64}\s+HTTP/1\.[01]$ | 356.790 |
+| jdk_matches_loop | 64 | ^[^@\s]{1,64}@[^@\s]{1,255}$ | 157.884 |
+| jdk_matches_loop | 512 | ^[A-Za-z0-9_]{3,16}$ | 20.740 |
+| jdk_matches_loop | 512 | ^(?:GET\|POST)\s+/[A-Za-z0-9/_-]{1,64}\s+HTTP/1\.[01]$ | 43.592 |
+| jdk_matches_loop | 512 | ^[^@\s]{1,64}@[^@\s]{1,255}$ | 18.363 |
 
 ## Running the Demo
 
