@@ -1,10 +1,10 @@
-use jni::objects::{JByteBuffer, JClass, JObject, JIntArray, JLongArray};
+use jni::objects::{JByteBuffer, JClass, JIntArray, JLongArray, ReleaseMode};
 use jni::sys::{jboolean, jint, jlong};
 use jni::JNIEnv;
 
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
-use regex::Regex;
+use regex::bytes::Regex;
 use slab::Slab;
 use std::sync::Arc;
 
@@ -84,7 +84,7 @@ pub extern "system" fn Java_me_naimad_fastregex_FastRegex_matchesUtf8Direct(
     mut env: JNIEnv,
     _cls: JClass,
     handle: jlong,
-    direct_buf: JObject,
+    direct_buf: JByteBuffer,
     offset: jint,
     len: jint,
 ) -> jboolean {
@@ -96,40 +96,37 @@ pub extern "system" fn Java_me_naimad_fastregex_FastRegex_matchesUtf8Direct(
         }
     };
 
-    let base_ptr = match env.get_direct_buffer_address(<&JByteBuffer>::from(&direct_buf)) {
+    // Optimization: Pull address and capacity once to minimize JNI calls.
+    let base_ptr = match env.get_direct_buffer_address(&direct_buf) {
         Ok(p) => p,
         Err(_) => {
             throw_iae(&mut env, "Buffer is not a DirectByteBuffer");
             return 0;
         }
     };
-    let cap = match env.get_direct_buffer_capacity(<&JByteBuffer>::from(&direct_buf)) {
-        Ok(c) => c,
+    let cap = match env.get_direct_buffer_capacity(&direct_buf) {
+        Ok(c) => c as usize,
         Err(_) => {
             throw_iae(&mut env, "Failed to read DirectByteBuffer capacity");
             return 0;
         }
     };
 
-    let off = offset as isize;
-    let ln = len as isize;
-    if offset < 0 || len < 0 || off + ln > cap as isize {
+    let off_u = offset as usize;
+    let ln_u = len as usize;
+
+    // Fast unsigned bounds check covering both negative values and overflows.
+    if off_u > cap || ln_u > cap - off_u {
         throw_iae(&mut env, "offset/len out of bounds");
         return 0;
     }
 
-    let slice = unsafe {
-        std::slice::from_raw_parts(base_ptr.add(offset as usize) as *const u8, len as usize)
-    };
+    // Optimization: Direct pointer addition for slice creation to avoid extra slicing overhead.
+    // Safety: direct_buf is a DirectByteBuffer, base_ptr is its starting address, cap is its capacity.
+    // off_u and ln_u are validated to be within [0, cap].
+    let slice = unsafe { std::slice::from_raw_parts(base_ptr.add(off_u), ln_u) };
 
-    let text = match std::str::from_utf8(slice) {
-        Ok(s) => s,
-        Err(_) => {
-            return 0;
-        }
-    };
-
-    if re.is_match(text) { 1 } else { 0 }
+    if re.is_match(slice) { 1 } else { 0 }
 }
 
 #[no_mangle]
@@ -137,7 +134,7 @@ pub extern "system" fn Java_me_naimad_fastregex_FastRegex_batchMatchesUtf8Direct
     mut env: JNIEnv,
     _cls: JClass,
     handle: jlong,
-    data_buf: JObject,
+    data_buf: JByteBuffer,
     offsets: JIntArray,
     lengths: JIntArray,
     out_bits: JLongArray,
@@ -150,15 +147,16 @@ pub extern "system" fn Java_me_naimad_fastregex_FastRegex_batchMatchesUtf8Direct
         }
     };
 
-    let base_ptr = match env.get_direct_buffer_address(<&JByteBuffer>::from(&data_buf)) {
+    // Optimization: Pull address and capacity once.
+    let base_ptr = match env.get_direct_buffer_address(&data_buf) {
         Ok(p) => p,
         Err(_) => {
             throw_iae(&mut env, "dataBuf is not a DirectByteBuffer");
             return;
         }
     };
-    let cap = match env.get_direct_buffer_capacity(<&JByteBuffer>::from(&data_buf)) {
-        Ok(c) => c,
+    let cap = match env.get_direct_buffer_capacity(&data_buf) {
+        Ok(c) => c as usize,
         Err(_) => {
             throw_iae(&mut env, "Failed to read dataBuf capacity");
             return;
@@ -200,66 +198,57 @@ pub extern "system" fn Java_me_naimad_fastregex_FastRegex_batchMatchesUtf8Direct
         return;
     }
 
-    {
-        const CHUNK: usize = 256;
-        let zeros = [0i64; CHUNK];
-        let mut i = 0usize;
-        while i < needed_words {
-            let take = (needed_words - i).min(CHUNK);
-            if env.set_long_array_region(&out_bits, i as i32, &zeros[..take]).is_err() {
-                throw_iae(&mut env, "Failed to clear outBits");
+    // Optimization: Create the data slice once for the whole batch.
+    // Safety: data_buf is a DirectByteBuffer, base_ptr is its starting address, cap is its capacity.
+    let data: &[u8] = unsafe { std::slice::from_raw_parts(base_ptr, cap) };
+
+    unsafe {
+        let offsets_auto = match env.get_array_elements(&offsets, ReleaseMode::NoCopyBack) {
+            Ok(a) => a,
+            Err(_) => {
+                throw_iae(&mut env, "Failed to get offsets array elements");
                 return;
             }
-            i += take;
-        }
-    }
-
-    const CHUNK: usize = 256;
-    let mut off_buf = [0i32; CHUNK];
-    let mut len_buf = [0i32; CHUNK];
-
-    let mut base_index = 0usize;
-    while base_index < n {
-        let take = (n - base_index).min(CHUNK);
-
-        if env.get_int_array_region(&offsets, base_index as i32, &mut off_buf[..take]).is_err() {
-            throw_iae(&mut env, "Failed to read offsets");
-            return;
-        }
-        if env.get_int_array_region(&lengths, base_index as i32, &mut len_buf[..take]).is_err() {
-            throw_iae(&mut env, "Failed to read lengths");
-            return;
-        }
-
-        for j in 0..take {
-            let idx = base_index + j;
-            let off = off_buf[j];
-            let ln = len_buf[j];
-
-            if off < 0 || ln < 0 || (off as isize) + (ln as isize) > cap as isize {
-                continue;
+        };
+        let lengths_auto = match env.get_array_elements(&lengths, ReleaseMode::NoCopyBack) {
+            Ok(a) => a,
+            Err(_) => {
+                throw_iae(&mut env, "Failed to get lengths array elements");
+                return;
             }
+        };
+        let mut out_bits_auto = match env.get_array_elements(&out_bits, ReleaseMode::CopyBack) {
+            Ok(a) => a,
+            Err(_) => {
+                throw_iae(&mut env, "Failed to get outBits array elements");
+                return;
+            }
+        };
 
-            let slice = unsafe {
-                std::slice::from_raw_parts(base_ptr.add(off as usize) as *const u8, ln as usize)
-            };
+        // Use slices for faster access and to enable compiler optimizations like auto-vectorization.
+        let offsets_slice = &*offsets_auto;
+        let lengths_slice = &*lengths_auto;
+        let out_bits_slice = &mut *out_bits_auto;
 
-            let Ok(text) = std::str::from_utf8(slice) else {
-                continue;
-            };
+        // Optimization: Use chunks(64) to iterate over bitset words, simplifying loops and bit logic.
+        // Using zip() for offsets and lengths allows the compiler to optimize access patterns.
+        for (word_idx, (off_chunk, len_chunk)) in offsets_slice.chunks(64).zip(lengths_slice.chunks(64)).enumerate() {
+            let mut word = 0i64;
+            for (bit_idx, (&off, &ln)) in off_chunk.iter().zip(len_chunk.iter()).enumerate() {
+                // Optimization: Fast unsigned bounds check covers negative values and overflow.
+                let off_u = off as usize;
+                let ln_u = ln as usize;
 
-            if re.is_match(text) {
-                let word_index = idx / 64;
-                let bit_index = idx % 64;
-
-                let mut word = [0i64; 1];
-                if env.get_long_array_region(&out_bits, word_index as i32, &mut word).is_ok() {
-                    word[0] |= 1i64 << bit_index;
-                    let _ = env.set_long_array_region(&out_bits, word_index as i32, &word);
+                if off_u <= cap && ln_u <= cap - off_u {
+                    // Safety: off_u and ln_u are within data bounds.
+                    let slice = data.get_unchecked(off_u..off_u + ln_u);
+                    if re.is_match(slice) {
+                        word |= 1i64 << bit_idx;
+                    }
                 }
             }
+            // word_idx < needed_words <= out_bits_slice.len() is guaranteed.
+            *out_bits_slice.get_unchecked_mut(word_idx) = word;
         }
-
-        base_index += take;
     }
 }
