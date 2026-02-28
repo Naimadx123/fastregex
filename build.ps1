@@ -55,8 +55,9 @@ Copy-Item $dllPath (Join-Path $distDir "fastregex.dll")
 
 Write-Host "Compiling Java sources..."
 Push-Location $javaDir
-# Compiling all Java files
-Get-ChildItem -Recurse -Filter "*.java" | ForEach-Object { javac $_.FullName }
+# Compiling all Java files at once for efficiency and to resolve dependencies
+$javaFiles = Get-ChildItem -Recurse -Filter "*.java" | ForEach-Object { Resolve-Path $_.FullName -Relative }
+javac $javaFiles
 
 Write-Host "Packaging fastregex.jar..."
 # Only include FastRegex and its inner classes in the jar
