@@ -94,6 +94,19 @@ FastRegex vs JDK (`matches()` loop):
 | jdk_matches_loop | 512 | ^(?:GET\|POST)\s+/[A-Za-z0-9/_-]{1,64}\s+HTTP/1\.[01]$ | 43.592 |
 | jdk_matches_loop | 512 | ^[^@\s]{1,64}@[^@\s]{1,255}$ | 18.363 |
 
+### Speedup table
+
+**FastRegex is 2.7× to 4.8× faster than Java's built-in regex in these benchmarks.**
+
+| Regex | n | FastRegex match_only (ops/ms) | JDK matches (ops/ms) | Speedup |
+| ----- | -:| ----------------------------:| --------------------:| -------:|
+| ^[A-Za-z0-9_]{3,16}$ | 64 | 535.402 | 168.826 | 3.17× |
+| ^(?:GET\|POST)\s+/[A-Za-z0-9/_-]{1,64}\s+HTTP/1\.[01]$ | 64 | 1133.116 | 356.790 | 3.18× |
+| ^[^@\s]{1,64}@[^@\s]{1,255}$ | 64 | 435.196 | 157.884 | 2.76× |
+| ^[A-Za-z0-9_]{3,16}$ | 512 | 78.851 | 20.740 | 3.80× |
+| ^(?:GET\|POST)\s+/[A-Za-z0-9/_-]{1,64}\s+HTTP/1\.[01]$ | 512 | 210.821 | 43.592 | 4.84× |
+| ^[^@\s]{1,64}@[^@\s]{1,255}$ | 512 | 60.727 | 18.363 | 3.31× |
+
 ## Running the Demo
 
 ``` powershell
