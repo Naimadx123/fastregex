@@ -6,7 +6,7 @@ import java.nio.charset.StandardCharsets;
 public class FastRegex {
 
     static {
-        me.naimad.fastregex.NativeLoader.load();
+        NativeLoader.load();
     }
 
     public static native long compile(String pattern);

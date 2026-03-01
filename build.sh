@@ -72,9 +72,7 @@ cp "$BUILT_LIB_PATH" "$DIST_DIR/$LIB_NAME"
 
 echo "Compiling Java sources..."
 cd "$JAVA_DIR"
-find . -name "*.java" > java_sources.txt
-javac @java_sources.txt
-rm java_sources.txt
+javac -d . me/naimad/fastregex/*.java
 
 echo "Packaging fastregex.jar with bundled native libraries..."
 jar cvf fastregex.jar me/naimad/fastregex/*.class me/naimad/fastregex/native_bin/

@@ -77,9 +77,8 @@ Copy-Item $builtLibPath (Join-Path $distDir $libName) -Force
 
 Write-Host "Compiling Java sources..."
 Push-Location $javaDir
-# Compiling all Java files at once for efficiency and to resolve dependencies
-$javaFiles = Get-ChildItem -Recurse -Filter "*.java" | ForEach-Object { Resolve-Path $_.FullName -Relative }
-javac $javaFiles
+# Compile all Java sources found in the package
+javac -d . me\naimad\fastregex\*.java
 
 Write-Host "Packaging fastregex.jar with bundled native libraries..."
 # Include all classes and the package-relative native_bin/ directory

@@ -91,9 +91,8 @@ jobs:
     - name: Build and package JAR
       run: |
         cd java
-        # Compile all Java sources found in the directory tree
-        find . -name "*.java" > java_sources.txt
-        javac -d . @java_sources.txt
+        # Compile all Java sources
+        javac -d . me/naimad/fastregex/*.java
         # Package classes and the package-relative native_bin directory
         jar cvf fastregex.jar me/naimad/fastregex/*.class me/naimad/fastregex/native_bin/
         mkdir -p ../dist
