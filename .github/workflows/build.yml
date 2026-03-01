@@ -91,8 +91,10 @@ jobs:
     - name: Build and package JAR
       run: |
         cd java
-        # Compile all Java sources
-        javac -d . me/naimad/fastregex/*.java
+        # Clean any potentially downloaded .class files (though unlikely)
+        rm -f me/naimad/fastregex/*.class
+        # Explicitly list all source files to ensure correct compilation of dependencies
+        javac -d . me/naimad/fastregex/FastRegexLoader.java me/naimad/fastregex/FastRegex.java me/naimad/fastregex/Demo.java
         # Package classes and the package-relative native_bin directory
         jar cvf fastregex.jar me/naimad/fastregex/*.class me/naimad/fastregex/native_bin/
         mkdir -p ../dist

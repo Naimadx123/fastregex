@@ -72,7 +72,10 @@ cp "$BUILT_LIB_PATH" "$DIST_DIR/$LIB_NAME"
 
 echo "Compiling Java sources..."
 cd "$JAVA_DIR"
-javac -d . me/naimad/fastregex/*.java
+# Clean up any old class files
+rm -f me/naimad/fastregex/*.class
+# Explicitly list all files to ensure they are compiled together in correct order
+javac -d . me/naimad/fastregex/FastRegexLoader.java me/naimad/fastregex/FastRegex.java me/naimad/fastregex/Demo.java
 
 echo "Packaging fastregex.jar with bundled native libraries..."
 jar cvf fastregex.jar me/naimad/fastregex/*.class me/naimad/fastregex/native_bin/

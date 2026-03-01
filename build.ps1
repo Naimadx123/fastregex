@@ -78,7 +78,8 @@ Copy-Item $builtLibPath (Join-Path $distDir $libName) -Force
 Write-Host "Compiling Java sources..."
 Push-Location $javaDir
 # Compile all Java sources found in the package
-javac -d . me\naimad\fastregex\*.java
+# We list them explicitly to ensure correct dependency resolution in some environments
+javac -d . me\naimad\fastregex\FastRegexLoader.java me\naimad\fastregex\FastRegex.java me\naimad\fastregex\Demo.java
 
 Write-Host "Packaging fastregex.jar with bundled native libraries..."
 # Include all classes and the package-relative native_bin/ directory
