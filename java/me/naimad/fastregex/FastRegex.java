@@ -1,12 +1,13 @@
 package me.naimad.fastregex;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.Arrays;
+import java.util.List;
 
 public class FastRegex {
 
@@ -26,7 +27,7 @@ public class FastRegex {
             libPrefix = "";
             libSuffix = ".dll";
             osName = "windows";
-        } else if (osProp.contains("mac")) {
+        } else if (osProp.contains("mac") || osProp.contains("darwin")) {
             libSuffix = ".dylib";
             osName = "macos";
         }
@@ -41,25 +42,62 @@ public class FastRegex {
             arch = archProp;
         }
 
-        String resourcePath = "/native/" + osName + "-" + arch + "/" + libPrefix + "fastregex" + libSuffix;
-        try (InputStream is = FastRegex.class.getResourceAsStream(resourcePath)) {
-            if (is != null) {
-                File tempFile = Files.createTempFile("fastregex-native-", libSuffix).toFile();
-                tempFile.deleteOnExit();
-                Files.copy(is, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                System.load(tempFile.getAbsolutePath());
+        String libName = libPrefix + "fastregex" + libSuffix;
+        String resourcePath = "/native/" + osName + "-" + arch + "/" + libName;
+
+        try {
+            if (loadFromResource(resourcePath, libSuffix)) {
                 return;
             }
-        } catch (Exception ignored) {
+        } catch (Throwable t) {
             // Fallback to searching in java.library.path
         }
 
         try {
             System.loadLibrary("fastregex");
         } catch (UnsatisfiedLinkError e) {
-            throw new UnsatisfiedLinkError("Could not load fastregex native library for " + osName + "-" + arch +
-                    ". Looked in JAR resource " + resourcePath + " and java.library.path.");
+            String msg = "Could not load fastregex native library for " + osName + "-" + arch + ".\n" +
+                    "Tried JAR resource: " + resourcePath + "\n" +
+                    "Error: " + e.getMessage();
+            throw new UnsatisfiedLinkError(msg);
         }
+    }
+
+    private static boolean loadFromResource(String path, String suffix) {
+        // Try multiple class loaders for better compatibility (e.g., in fat-jars or complex environments)
+        List<ClassLoader> loaders = Arrays.asList(
+                FastRegex.class.getClassLoader(),
+                Thread.currentThread().getContextClassLoader(),
+                ClassLoader.getSystemClassLoader()
+        );
+
+        String strippedPath = path.startsWith("/") ? path.substring(1) : path;
+
+        for (ClassLoader loader : loaders) {
+            if (loader == null) continue;
+            try (InputStream is = loader.getResourceAsStream(strippedPath)) {
+                if (is != null) {
+                    return loadFromStream(is, suffix);
+                }
+            } catch (Exception ignored) {}
+        }
+
+        // Final attempt using Class.getResourceAsStream
+        try (InputStream is = FastRegex.class.getResourceAsStream(path)) {
+            if (is != null) {
+                return loadFromStream(is, suffix);
+            }
+        } catch (Exception ignored) {}
+
+        return false;
+    }
+
+    private static boolean loadFromStream(InputStream is, String suffix) throws Exception {
+        File tempFile = Files.createTempFile("fastregex-native-", suffix).toFile();
+        tempFile.deleteOnExit();
+        Files.copy(is, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        System.load(tempFile.getAbsolutePath());
+        return true;
     }
 
     public static native long compile(String pattern);
