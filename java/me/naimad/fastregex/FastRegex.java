@@ -46,58 +46,62 @@ public class FastRegex {
         String resourcePath = "/native/" + osName + "-" + arch + "/" + libName;
 
         try {
-            if (loadFromResource(resourcePath, libSuffix)) {
-                return;
-            }
+             loadFromResource(resourcePath, libSuffix);
+            return;
         } catch (Throwable t) {
-            // Fallback to searching in java.library.path
-        }
-
-        try {
-            System.loadLibrary("fastregex");
-        } catch (UnsatisfiedLinkError e) {
-            String msg = "Could not load fastregex native library for " + osName + "-" + arch + ".\n" +
-                    "Tried JAR resource: " + resourcePath + "\n" +
-                    "Error: " + e.getMessage();
-            throw new UnsatisfiedLinkError(msg);
+            try {
+                System.loadLibrary("fastregex");
+            } catch (UnsatisfiedLinkError e) {
+                String msg = "Could not load fastregex native library for " + osName + "-" + arch + ".\n" +
+                        "Tried JAR resource: " + resourcePath + " (error: " + t.toString() + ")\n" +
+                        "Tried System.loadLibrary(\"fastregex\") (error: " + e.toString() + ")";
+                UnsatisfiedLinkError error = new UnsatisfiedLinkError(msg);
+                error.initCause(t);
+                throw error;
+            }
         }
     }
 
-    private static boolean loadFromResource(String path, String suffix) {
-        // Try multiple class loaders for better compatibility (e.g., in fat-jars or complex environments)
-        List<ClassLoader> loaders = Arrays.asList(
-                FastRegex.class.getClassLoader(),
-                Thread.currentThread().getContextClassLoader(),
-                ClassLoader.getSystemClassLoader()
-        );
+    private static void loadFromResource(String path, String suffix) throws Exception {
+        // Try Class.getResourceAsStream first - most reliable for resources in the same JAR
+        try (InputStream is = FastRegex.class.getResourceAsStream(path)) {
+            if (is != null) {
+                loadFromStream(is, suffix);
+                return;
+            }
+        }
 
         String strippedPath = path.startsWith("/") ? path.substring(1) : path;
+        List<ClassLoader> loaders = Arrays.asList(
+                Thread.currentThread().getContextClassLoader(),
+                FastRegex.class.getClassLoader(),
+                ClassLoader.getSystemClassLoader()
+        );
 
         for (ClassLoader loader : loaders) {
             if (loader == null) continue;
             try (InputStream is = loader.getResourceAsStream(strippedPath)) {
                 if (is != null) {
-                    return loadFromStream(is, suffix);
+                    loadFromStream(is, suffix);
+                    return;
                 }
             } catch (Exception ignored) {}
         }
 
-        // Final attempt using Class.getResourceAsStream
-        try (InputStream is = FastRegex.class.getResourceAsStream(path)) {
-            if (is != null) {
-                return loadFromStream(is, suffix);
-            }
-        } catch (Exception ignored) {}
-
-        return false;
+        throw new java.io.FileNotFoundException("Resource not found: " + path);
     }
 
-    private static boolean loadFromStream(InputStream is, String suffix) throws Exception {
+    private static void loadFromStream(InputStream is, String suffix) throws Exception {
         File tempFile = Files.createTempFile("fastregex-native-", suffix).toFile();
         tempFile.deleteOnExit();
-        Files.copy(is, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-        System.load(tempFile.getAbsolutePath());
-        return true;
+        try {
+            Files.copy(is, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            System.load(tempFile.getAbsolutePath());
+        } catch (Throwable t) {
+            tempFile.delete();
+            if (t instanceof Exception) throw (Exception) t;
+            throw new Exception("Native load error", t);
+        }
     }
 
     public static native long compile(String pattern);
