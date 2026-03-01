@@ -45,17 +45,40 @@ public class FastRegex {
         String libName = libPrefix + "fastregex" + libSuffix;
         String resourcePath = "/native/" + osName + "-" + arch + "/" + libName;
 
+        // 1. Try system property override
+        String explicitPath = System.getProperty("fastregex.native.path");
+        if (explicitPath != null) {
+            File f = new File(explicitPath);
+            if (f.exists()) {
+                try {
+                    System.load(f.getAbsolutePath());
+                    return;
+                } catch (UnsatisfiedLinkError e) {
+                    System.err.println("[FastRegex] Failed to load library from explicit path: " + explicitPath + " - " + e.getMessage());
+                }
+            } else {
+                System.err.println("[FastRegex] Explicit native path does not exist: " + explicitPath);
+            }
+        }
+
+        // 2. Try loading from JAR resources
         try {
-             loadFromResource(resourcePath, libSuffix);
+            loadFromResource(resourcePath, libSuffix);
             return;
         } catch (Throwable t) {
+            // 3. Last fallback: System.loadLibrary
             try {
                 System.loadLibrary("fastregex");
             } catch (UnsatisfiedLinkError e) {
-                String msg = "Could not load fastregex native library for " + osName + "-" + arch + ".\n" +
-                        "Tried JAR resource: " + resourcePath + " (error: " + t.toString() + ")\n" +
-                        "Tried System.loadLibrary(\"fastregex\") (error: " + e.toString() + ")";
-                UnsatisfiedLinkError error = new UnsatisfiedLinkError(msg);
+                StringBuilder msg = new StringBuilder();
+                msg.append("Could not load fastregex native library for ").append(osName).append("-").append(arch).append(".\n");
+                msg.append("1. System property 'fastregex.native.path' was: ").append(explicitPath).append("\n");
+                msg.append("2. JAR resource not found: ").append(resourcePath).append(" (error: ").append(t.getMessage()).append(")\n");
+                msg.append("3. System.loadLibrary(\"fastregex\") failed (error: ").append(e.getMessage()).append(")\n\n");
+                msg.append("Ensure the native library is present in the JAR at '").append(resourcePath).append("' ");
+                msg.append("or in java.library.path.");
+                
+                UnsatisfiedLinkError error = new UnsatisfiedLinkError(msg.toString());
                 error.initCause(t);
                 throw error;
             }
