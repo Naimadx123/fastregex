@@ -17,9 +17,9 @@
         <sourceDirectory>java</sourceDirectory>
         <resources>
             <resource>
-                <directory>java</directory>
+                <directory>${project.basedir}/java</directory>
                 <includes>
-                    <include>native/**</include>
+                    <include>native/**/*</include>
                 </includes>
             </resource>
         </resources>
