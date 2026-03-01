@@ -1,4 +1,4 @@
-# build.ps1 - Simple build script for fastregex
+# build.ps1 - Multi-platform build script for fastregex
 
 $ErrorActionPreference = "Stop"
 
@@ -7,6 +7,11 @@ $rustDir = Join-Path $root "rust"
 $javaDir = Join-Path $root "java"
 $distDir = Join-Path $root "dist"
 $jar = "jar"
+
+# Detect OS and Arch for bundling
+$isWindows = $env:OS -like "*Windows*"
+$currentOs = if ($isWindows) { "windows" } else { "linux" }
+$currentArch = if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64" -or $env:PROCESSOR_ARCHITEW6432 -eq "AMD64") { "x86_64" } else { "aarch64" }
 
 Write-Host "Checking requirements..."
 if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
@@ -42,16 +47,33 @@ if (-not (Test-Path $distDir)) {
     New-Item -ItemType Directory -Path $distDir | Out-Null
 }
 
-Write-Host "Building Rust library..."
+Write-Host "Building Rust library for current platform ($currentOs-$currentArch)..."
+# Tip: For cross-compilation from Windows to Linux, you can use cargo-zigbuild:
+#   cargo install cargo-zigbuild
+#   cargo zigbuild --target x86_64-unknown-linux-gnu --release
 Push-Location $rustDir
 cargo build --release
 Pop-Location
 
-$dllPath = Join-Path $rustDir "target\release\fastregex.dll"
-if (-not (Test-Path $dllPath)) {
-    Write-Error "Could not find fastregex.dll at $dllPath"
+# Prepare native library for JAR bundling
+# We store it in java/native/{os}-{arch}/ so the JAR packager can find it easily
+$nativeResBase = Join-Path $javaDir "native"
+$nativeResDir = Join-Path $nativeResBase "$currentOs-$currentArch"
+if (-not (Test-Path $nativeResDir)) {
+    New-Item -ItemType Directory -Path $nativeResDir -Force | Out-Null
 }
-Copy-Item $dllPath (Join-Path $distDir "fastregex.dll")
+
+$libPrefix = if ($currentOs -eq "windows") { "" } else { "lib" }
+$libExt = if ($currentOs -eq "windows") { ".dll" } else { ".so" }
+$libName = $libPrefix + "fastregex" + $libExt
+$builtLibPath = Join-Path $rustDir "target\release\$libName"
+
+if (-not (Test-Path $builtLibPath)) {
+    Write-Error "Could not find built library at $builtLibPath"
+}
+Copy-Item $builtLibPath (Join-Path $nativeResDir $libName) -Force
+# Also copy to dist for convenience
+Copy-Item $builtLibPath (Join-Path $distDir $libName) -Force
 
 Write-Host "Compiling Java sources..."
 Push-Location $javaDir
@@ -59,13 +81,14 @@ Push-Location $javaDir
 $javaFiles = Get-ChildItem -Recurse -Filter "*.java" | ForEach-Object { Resolve-Path $_.FullName -Relative }
 javac $javaFiles
 
-Write-Host "Packaging fastregex.jar..."
-# Only include FastRegex and its inner classes in the jar
-& $jar cvf fastregex.jar me\naimad\fastregex\FastRegex.class me\naimad\fastregex\FastRegex`$PackedUtf8.class
+Write-Host "Packaging fastregex.jar with bundled native libraries..."
+# Include all classes and the native/ directory structure
+# This makes the JAR self-contained
+& $jar cvf fastregex.jar me\naimad\fastregex\*.class native\
 Copy-Item fastregex.jar (Join-Path $distDir "fastregex.jar")
 Pop-Location
 
 Write-Host "Build complete! Artifacts in $distDir"
-Write-Host "To run the demo:"
+Write-Host "To run the demo (native library loads automatically from JAR):"
 Write-Host "  cd dist"
-Write-Host "  java '-Djava.library.path=.' -cp 'fastregex.jar;..\java' me.naimad.fastregex.Demo"
+Write-Host "  java -cp fastregex.jar me.naimad.fastregex.Demo"

@@ -8,29 +8,98 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: windows-latest
+  build-native:
+    name: Build native lib (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, macos-13, windows-latest]
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up JDK
-      uses: actions/setup-java@v4
-      with:
-        java-version: '11'
-        distribution: 'temurin'
-
     - name: Set up Rust
       uses: dtolnay/rust-toolchain@stable
 
-    - name: Build with build.ps1
-      run: .\build.ps1
-      shell: pwsh
+    - name: Build Rust library
+      run: cargo build --release
+      working-directory: rust
 
-    - name: Upload JAR and DLL
+    - name: Prepare artifact directory
+      shell: bash
+      run: |
+        OS_NAME=""
+        case "${{ matrix.os }}" in
+          ubuntu-latest)  OS_NAME="linux" ;;
+          macos-latest)   OS_NAME="macos" ;;
+          windows-latest) OS_NAME="windows" ;;
+        esac
+
+        # Determine arch
+        ARCH_NAME=$(uname -m)
+        if [[ "$ARCH_NAME" == "x86_64" ]] || [[ "$ARCH_NAME" == "amd64" ]]; then
+          ARCH="x86_64"
+        elif [[ "$ARCH_NAME" == "aarch64" ]] || [[ "$ARCH_NAME" == "arm64" ]]; then
+          ARCH="aarch64"
+        else
+          ARCH="$ARCH_NAME"
+        fi
+
+        LIB_PREFIX="lib"
+        LIB_EXT=".so"
+        if [ "$OS_NAME" == "windows" ]; then
+          LIB_PREFIX=""
+          LIB_EXT=".dll"
+        elif [ "$OS_NAME" == "macos" ]; then
+          LIB_EXT=".dylib"
+        fi
+
+        LIB_NAME="${LIB_PREFIX}fastregex${LIB_EXT}"
+        TARGET_DIR="native-libs/$OS_NAME-$ARCH"
+        mkdir -p "$TARGET_DIR"
+        cp "rust/target/release/$LIB_NAME" "$TARGET_DIR/"
+        echo "OS_ARCH=$OS_NAME-$ARCH" >> $GITHUB_ENV
+
+    - name: Upload native lib
       uses: actions/upload-artifact@v4
       with:
-        name: fastregex-artifacts
-        path: |
-          dist/fastregex.jar
-          dist/fastregex.dll
+        name: native-lib-${{ env.OS_ARCH }}
+        path: native-libs/
+
+  package-jar:
+    name: Package Multi-platform JAR
+    needs: build-native
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+
+    - name: Download all native libs
+      uses: actions/download-artifact@v4
+      with:
+        pattern: native-lib-*
+        path: java/native
+        merge-multiple: true
+
+    - name: Build and package JAR
+      run: |
+        cd java
+        find . -name "*.java" > java_sources.txt
+        javac @java_sources.txt
+        # Package classes and the native directory structure
+        jar cvf fastregex.jar me/naimad/fastregex/*.class native/
+        mkdir -p ../dist
+        cp fastregex.jar ../dist/
+
+    - name: Upload final JAR
+      uses: actions/upload-artifact@v4
+      with:
+        name: fastregex-jar
+        path: dist/fastregex.jar

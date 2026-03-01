@@ -1,12 +1,65 @@
 package me.naimad.fastregex;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 
 public class FastRegex {
 
     static {
-        System.loadLibrary("fastregex");
+        loadNativeLibrary();
+    }
+
+    private static void loadNativeLibrary() {
+        String osProp = System.getProperty("os.name").toLowerCase();
+        String archProp = System.getProperty("os.arch").toLowerCase();
+
+        String libPrefix = "lib";
+        String libSuffix = ".so";
+        String osName = "linux";
+
+        if (osProp.contains("win")) {
+            libPrefix = "";
+            libSuffix = ".dll";
+            osName = "windows";
+        } else if (osProp.contains("mac")) {
+            libSuffix = ".dylib";
+            osName = "macos";
+        }
+
+        // Normalize architecture names
+        String arch;
+        if (archProp.matches("^(x86_64|amd64|x64)$")) {
+            arch = "x86_64";
+        } else if (archProp.matches("^(aarch64|arm64)$")) {
+            arch = "aarch64";
+        } else {
+            arch = archProp;
+        }
+
+        String resourcePath = "/native/" + osName + "-" + arch + "/" + libPrefix + "fastregex" + libSuffix;
+        try (InputStream is = FastRegex.class.getResourceAsStream(resourcePath)) {
+            if (is != null) {
+                File tempFile = Files.createTempFile("fastregex-native-", libSuffix).toFile();
+                tempFile.deleteOnExit();
+                Files.copy(is, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                System.load(tempFile.getAbsolutePath());
+                return;
+            }
+        } catch (Exception ignored) {
+            // Fallback to searching in java.library.path
+        }
+
+        try {
+            System.loadLibrary("fastregex");
+        } catch (UnsatisfiedLinkError e) {
+            throw new UnsatisfiedLinkError("Could not load fastregex native library for " + osName + "-" + arch +
+                    ". Looked in JAR resource " + resourcePath + " and java.library.path.");
+        }
     }
 
     public static native long compile(String pattern);

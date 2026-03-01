@@ -12,23 +12,44 @@ via JNI.
 ## Building from source
 
 Requirements: - Rust (Cargo) - JDK 17 or 21 (javac, jar) - PowerShell
-(on Windows)
+(on Windows) or Bash (on Linux)
 
 Run the build script:
 
-``` powershell
+**Windows:**
+```powershell
 .\build.ps1
 ```
 
-This will create the `dist/` directory with: - `fastregex.jar`: Contains
-the `me.naimad.fastregex.FastRegex` class. - `fastregex.dll`: The native
-library (on Windows).
+**Linux / macOS:**
+```bash
+./build.sh
+```
+
+This will create the `dist/` directory with a self-contained
+`fastregex.jar` that includes the native library for your current
+platform.
+
+### Multi-platform JAR
+
+The GitHub Actions workflow automatically builds and packages native libraries for:
+-   Windows (x86_64)
+-   Linux (x86_64)
+-   macOS (x86_64 and aarch64)
+
+The resulting `fastregex.jar` is a single file that works across all these platforms.
+
+To create it manually:
+1.  Run `.\build.ps1` on Windows.
+2.  Run `./build.sh` on Linux and/or macOS.
+3.  Ensure all binaries are placed in `java/native/{os}-{arch}/`.
+4.  The final `fastregex.jar` will contain all native libraries found in `java/native/`.
 
 ## Usage
 
 1.  Add `fastregex.jar` to your classpath.
-2.  Ensure the native library (`fastregex.dll` or `libfastregex.so`) is
-    in your `java.library.path`.
+2.  The library will automatically extract and load the correct native
+    binary for your OS and architecture from the JAR.
 
 Example code:
 
@@ -56,6 +77,13 @@ for (int i = 0; i < batch.length; i++) {
 
 // Release native resources
 FastRegex.release(handle);
+```
+
+## Running the Demo
+
+``` bash
+# Running the demo from the self-contained JAR
+java -cp dist/fastregex.jar me.naimad.fastregex.Demo
 ```
 
 ## Benchmarks (JMH)
@@ -107,9 +135,3 @@ FastRegex vs JDK (`matches()` loop):
 | ^(?:GET\|POST)\s+/[A-Za-z0-9/_-]{1,64}\s+HTTP/1\.[01]$ | 512 | 210.821 | 43.592 | 4.84× |
 | ^[^@\s]{1,64}@[^@\s]{1,255}$ | 512 | 60.727 | 18.363 | 3.31× |
 
-## Running the Demo
-
-``` powershell
-cd dist
-java "-Djava.library.path=." -cp "fastregex.jar;..\java" me.naimad.fastregex.Demo
-```
