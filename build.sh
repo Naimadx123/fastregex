@@ -50,7 +50,7 @@ cargo build --release
 cd "$ROOT"
 
 # Prepare native library for JAR bundling
-NATIVE_RES_DIR="$JAVA_DIR/me/naimad/fastregex/native/$OS-$ARCH"
+NATIVE_RES_DIR="$JAVA_DIR/me/naimad/fastregex/native_bin/$OS-$ARCH"
 mkdir -p "$NATIVE_RES_DIR"
 
 LIB_PREFIX="lib"
@@ -77,7 +77,7 @@ javac @java_sources.txt
 rm java_sources.txt
 
 echo "Packaging fastregex.jar with bundled native libraries..."
-jar cvf fastregex.jar me/naimad/fastregex/*.class me/naimad/fastregex/native/
+jar cvf fastregex.jar me/naimad/fastregex/*.class me/naimad/fastregex/native_bin/
 cp fastregex.jar "$DIST_DIR/fastregex.jar"
 cd "$ROOT"
 
