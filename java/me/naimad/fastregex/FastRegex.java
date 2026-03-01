@@ -43,7 +43,8 @@ public class FastRegex {
         }
 
         String libName = libPrefix + "fastregex" + libSuffix;
-        String resourcePath = "/native/" + osName + "-" + arch + "/" + libName;
+        // Search in the package-relative native directory
+        String resourcePath = "/me/naimad/fastregex/native/" + osName + "-" + arch + "/" + libName;
 
         // 1. Try system property override
         String explicitPath = System.getProperty("fastregex.native.path");

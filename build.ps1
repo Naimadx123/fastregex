@@ -56,8 +56,8 @@ cargo build --release
 Pop-Location
 
 # Prepare native library for JAR bundling
-# We store it in java/native/{os}-{arch}/ so the JAR packager can find it easily
-$nativeResBase = Join-Path $javaDir "native"
+# We store it in java/me/naimad/fastregex/native/{os}-{arch}/
+$nativeResBase = Join-Path (Join-Path $javaDir "me\naimad\fastregex") "native"
 $nativeResDir = Join-Path $nativeResBase "$currentOs-$currentArch"
 if (-not (Test-Path $nativeResDir)) {
     New-Item -ItemType Directory -Path $nativeResDir -Force | Out-Null
@@ -82,9 +82,9 @@ $javaFiles = Get-ChildItem -Recurse -Filter "*.java" | ForEach-Object { Resolve-
 javac $javaFiles
 
 Write-Host "Packaging fastregex.jar with bundled native libraries..."
-# Include all classes and the native/ directory structure
+# Include all classes and the package-relative native/ directory
 # This makes the JAR self-contained
-& $jar cvf fastregex.jar me\naimad\fastregex\*.class native\
+& $jar cvf fastregex.jar me\naimad\fastregex\*.class me\naimad\fastregex\native\
 Copy-Item fastregex.jar (Join-Path $distDir "fastregex.jar")
 Pop-Location
 

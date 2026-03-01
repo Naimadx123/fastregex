@@ -42,8 +42,8 @@ The resulting `fastregex.jar` is a single file that works across all these platf
 To create it manually:
 1.  Run `.\build.ps1` on Windows.
 2.  Run `./build.sh` on Linux and/or macOS.
-3.  Ensure all binaries are placed in `java/native/{os}-{arch}/`.
-4.  The final `fastregex.jar` will contain all native libraries found in `java/native/`.
+3.  Ensure all binaries are placed in `java/me/naimad/fastregex/native/{os}-{arch}/`.
+4.  The final `fastregex.jar` will contain all native libraries found in that package directory.
 
 ## Usage
 

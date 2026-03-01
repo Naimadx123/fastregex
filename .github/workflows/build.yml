@@ -85,7 +85,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         pattern: native-lib-*
-        path: java/native
+        path: java/me/naimad/fastregex/native
         merge-multiple: true
 
     - name: Build and package JAR
@@ -93,8 +93,8 @@ jobs:
         cd java
         find . -name "*.java" > java_sources.txt
         javac @java_sources.txt
-        # Package classes and the native directory structure
-        jar cvf fastregex.jar me/naimad/fastregex/*.class native/
+        # Package classes and the package-relative native directory
+        jar cvf fastregex.jar me/naimad/fastregex/*.class me/naimad/fastregex/native/
         mkdir -p ../dist
         cp fastregex.jar ../dist/
 
