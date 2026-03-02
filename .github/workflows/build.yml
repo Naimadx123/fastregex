@@ -2,9 +2,9 @@ name: Build fastregex
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "dev" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "master", "dev" ]
   workflow_dispatch:
 
 jobs:
@@ -85,7 +85,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         pattern: native-lib-*
-        path: java/me/naimad/fastregex/native_bin
+        path: java/me/naimad/fastregex/native
         merge-multiple: true
 
     - name: Build and package JAR
@@ -94,9 +94,9 @@ jobs:
         # Clean any potentially downloaded .class files (though unlikely)
         rm -f me/naimad/fastregex/*.class
         # Explicitly list all source files to ensure correct compilation of dependencies
-        javac -d . me/naimad/fastregex/FastRegexLoader.java me/naimad/fastregex/FastRegex.java me/naimad/fastregex/Demo.java
-        # Package classes and the package-relative native_bin directory
-        jar cvf fastregex.jar me/naimad/fastregex/*.class me/naimad/fastregex/native_bin/
+        javac -d . me/naimad/fastregex/NativeLibLoader.java me/naimad/fastregex/FastRegex.java me/naimad/fastregex/Demo.java me/naimad/fastregex/TestLoad.java
+        # Package classes and the package-relative native directory
+        jar cvf fastregex.jar me/naimad/fastregex/*.class me/naimad/fastregex/native/
         mkdir -p ../dist
         cp fastregex.jar ../dist/
 

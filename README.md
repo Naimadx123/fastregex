@@ -42,7 +42,7 @@ The resulting `fastregex.jar` is a single file that works across all these platf
 To create it manually:
 1.  Run `.\build.ps1` on Windows.
 2.  Run `./build.sh` on Linux and/or macOS.
-3.  Ensure all binaries are placed in `java/me/naimad/fastregex/native_bin/{os}-{arch}/`.
+3.  Ensure all binaries are placed in `java/me/naimad/fastregex/native/{os}-{arch}/`.
 4.  The final `fastregex.jar` will contain all native libraries found in that package directory.
 
 ## Usage
@@ -50,6 +50,11 @@ To create it manually:
 1.  Add `fastregex.jar` to your classpath.
 2.  The library will automatically extract and load the correct native
     binary for your OS and architecture from the JAR.
+
+### Plugin & Container Safety
+
+-   Native libraries cannot be unloaded by the JVM. If you are using this library in a plugin or container that supports hot-reloading/redeploying, you may need to restart the entire JVM to load a new version of the library.
+-   The library uses a single load-per-JVM guard to ensure that it is extracted and loaded only once.
 
 Example code:
 

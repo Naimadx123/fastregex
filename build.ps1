@@ -56,17 +56,32 @@ cargo build --release
 Pop-Location
 
 # Prepare native library for JAR bundling
-# We store it in java/me/naimad/fastregex/native_bin/{os}-{arch}/
-$nativeResBase = Join-Path (Join-Path $javaDir "me\naimad\fastregex") "native_bin"
+# We store it in java/me/naimad/fastregex/native/{os}-{arch}/
+$nativeResBase = Join-Path (Join-Path $javaDir "me\naimad\fastregex") "native"
 $nativeResDir = Join-Path $nativeResBase "$currentOs-$currentArch"
 if (-not (Test-Path $nativeResDir)) {
     New-Item -ItemType Directory -Path $nativeResDir -Force | Out-Null
 }
 
 $libPrefix = if ($currentOs -eq "windows") { "" } else { "lib" }
-$libExt = if ($currentOs -eq "windows") { ".dll" } else { ".so" }
+$libExt = if ($currentOs -eq "windows") { ".dll" } else { if ($currentOs -eq "macos") { ".dylib" } else { ".so" } }
 $libName = $libPrefix + "fastregex" + $libExt
 $builtLibPath = Join-Path $rustDir "target\release\$libName"
+
+if (-not (Test-Path $builtLibPath)) {
+    # On Windows, try without 'lib' prefix too (though $libPrefix should handle it)
+    $builtLibPath = Join-Path $rustDir "target\release\fastregex.dll"
+}
+
+if (-not (Test-Path $builtLibPath)) {
+    # Check debug folder if release is not there
+    $builtLibPath = Join-Path $rustDir "target\debug\$libName"
+}
+
+if (-not (Test-Path $builtLibPath)) {
+    # Try just target\release
+    $builtLibPath = Join-Path $rustDir "target\release\$libName"
+}
 
 if (-not (Test-Path $builtLibPath)) {
     Write-Error "Could not find built library at $builtLibPath"
@@ -79,12 +94,12 @@ Write-Host "Compiling Java sources..."
 Push-Location $javaDir
 # Compile all Java sources found in the package
 # We list them explicitly to ensure correct dependency resolution in some environments
-javac -d . me\naimad\fastregex\FastRegexLoader.java me\naimad\fastregex\FastRegex.java me\naimad\fastregex\Demo.java
+javac -d . me\naimad\fastregex\NativeLibLoader.java me\naimad\fastregex\FastRegex.java me\naimad\fastregex\Demo.java me\naimad\fastregex\TestLoad.java
 
 Write-Host "Packaging fastregex.jar with bundled native libraries..."
-# Include all classes and the package-relative native_bin/ directory
+# Include all classes and the package-relative native/ directory
 # This makes the JAR self-contained
-& $jar cvf fastregex.jar me\naimad\fastregex\*.class me\naimad\fastregex\native_bin\
+& $jar cvf fastregex.jar me\naimad\fastregex\*.class me\naimad\fastregex\native\
 Copy-Item fastregex.jar (Join-Path $distDir "fastregex.jar")
 Pop-Location
 

@@ -50,7 +50,7 @@ cargo build --release
 cd "$ROOT"
 
 # Prepare native library for JAR bundling
-NATIVE_RES_DIR="$JAVA_DIR/me/naimad/fastregex/native_bin/$OS-$ARCH"
+NATIVE_RES_DIR="$JAVA_DIR/me/naimad/fastregex/native/$OS-$ARCH"
 mkdir -p "$NATIVE_RES_DIR"
 
 LIB_PREFIX="lib"
@@ -75,10 +75,10 @@ cd "$JAVA_DIR"
 # Clean up any old class files
 rm -f me/naimad/fastregex/*.class
 # Explicitly list all files to ensure they are compiled together in correct order
-javac -d . me/naimad/fastregex/FastRegexLoader.java me/naimad/fastregex/FastRegex.java me/naimad/fastregex/Demo.java
+javac -d . me/naimad/fastregex/NativeLibLoader.java me/naimad/fastregex/FastRegex.java me/naimad/fastregex/Demo.java me/naimad/fastregex/TestLoad.java
 
 echo "Packaging fastregex.jar with bundled native libraries..."
-jar cvf fastregex.jar me/naimad/fastregex/*.class me/naimad/fastregex/native_bin/
+jar cvf fastregex.jar me/naimad/fastregex/*.class me/naimad/fastregex/native/
 cp fastregex.jar "$DIST_DIR/fastregex.jar"
 cd "$ROOT"
 

@@ -19,7 +19,7 @@
             <resource>
                 <directory>${project.basedir}/java</directory>
                 <includes>
-                    <include>me/naimad/fastregex/native_bin/**/*</include>
+                    <include>me/naimad/fastregex/native/**/*</include>
                 </includes>
             </resource>
         </resources>
@@ -33,6 +33,7 @@
                     </compilerArgs>
                     <excludes>
                         <exclude>me/naimad/fastregex/Demo.java</exclude>
+                        <exclude>me/naimad/fastregex/TestLoad.java</exclude>
                     </excludes>
                 </configuration>
             </plugin>
