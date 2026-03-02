@@ -94,7 +94,10 @@ Write-Host "Compiling Java sources..."
 Push-Location $javaDir
 # Compile all Java sources found in the package
 # We list them explicitly to ensure correct dependency resolution in some environments
-javac -d . me\naimad\fastregex\NativeLibLoader.java me\naimad\fastregex\FastRegex.java me\naimad\fastregex\Demo.java me\naimad\fastregex\TestLoad.java
+javac --release 25 -d . me\naimad\fastregex\NativeLibLoader.java me\naimad\fastregex\FastRegex.java me\naimad\fastregex\Demo.java me\naimad\fastregex\TestLoad.java
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Java compilation failed."
+}
 
 Write-Host "Packaging fastregex.jar with bundled native libraries..."
 # Include all classes and the package-relative native/ directory
@@ -106,4 +109,4 @@ Pop-Location
 Write-Host "Build complete! Artifacts in $distDir"
 Write-Host "To run the demo (native library loads automatically from JAR):"
 Write-Host "  cd dist"
-Write-Host "  java -cp fastregex.jar me.naimad.fastregex.Demo"
+Write-Host "  java --enable-native-access=ALL-UNNAMED -cp fastregex.jar me.naimad.fastregex.Demo"

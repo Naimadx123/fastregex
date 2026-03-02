@@ -75,7 +75,7 @@ cd "$JAVA_DIR"
 # Clean up any old class files
 rm -f me/naimad/fastregex/*.class
 # Explicitly list all files to ensure they are compiled together in correct order
-javac -d . me/naimad/fastregex/NativeLibLoader.java me/naimad/fastregex/FastRegex.java me/naimad/fastregex/Demo.java me/naimad/fastregex/TestLoad.java
+javac --release 25 -d . me/naimad/fastregex/NativeLibLoader.java me/naimad/fastregex/FastRegex.java me/naimad/fastregex/Demo.java me/naimad/fastregex/TestLoad.java
 
 echo "Packaging fastregex.jar with bundled native libraries..."
 jar cvf fastregex.jar me/naimad/fastregex/*.class me/naimad/fastregex/native/
@@ -85,4 +85,4 @@ cd "$ROOT"
 echo "Build complete! Artifacts in $DIST_DIR"
 echo "To run the demo:"
 echo "  cd dist"
-echo "  java -cp fastregex.jar me.naimad.fastregex.Demo"
+echo "  java --enable-native-access=ALL-UNNAMED -cp fastregex.jar me.naimad.fastregex.Demo"

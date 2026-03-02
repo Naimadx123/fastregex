@@ -11,7 +11,7 @@ via JNI.
 
 ## Building from source
 
-Requirements: - Rust (Cargo) - JDK 17 or 21 (javac, jar) - PowerShell
+Requirements: - Rust (Cargo) - JDK 25 (javac, jar) - PowerShell
 (on Windows) or Bash (on Linux)
 
 Run the build script:
@@ -51,6 +51,14 @@ To create it manually:
 2.  The library will automatically extract and load the correct native
     binary for your OS and architecture from the JAR.
 
+### Java 21+ Note (Native Access)
+
+Starting with Java 21, the JVM issues warnings when native libraries are loaded. To suppress these warnings (and ensure future compatibility), run your application with:
+
+```bash
+java --enable-native-access=ALL-UNNAMED -cp fastregex.jar YourClass
+```
+
 ### Plugin & Container Safety
 
 -   Native libraries cannot be unloaded by the JVM. If you are using this library in a plugin or container that supports hot-reloading/redeploying, you may need to restart the entire JVM to load a new version of the library.
@@ -87,8 +95,8 @@ FastRegex.release(handle);
 ## Running the Demo
 
 ``` bash
-# Running the demo from the self-contained JAR
-java -cp dist/fastregex.jar me.naimad.fastregex.Demo
+# Running the demo from the self-contained JAR (with native access enabled for Java 21+)
+java --enable-native-access=ALL-UNNAMED -cp dist/fastregex.jar me.naimad.fastregex.Demo
 ```
 
 ## Benchmarks (JMH)
