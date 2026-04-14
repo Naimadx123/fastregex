@@ -1,6 +1,6 @@
 [package]
 name = "fastregex"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 [lib]
@@ -9,8 +9,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 regex = "1.12.3"
-jni = "0.21"
-once_cell = "1"
 moka = { version = "0.12", features = ["sync"] }
-parking_lot = "0.12"
-slab = "0.4"

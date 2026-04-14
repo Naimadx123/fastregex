@@ -1,256 +1,145 @@
-use jni::objects::{JByteBuffer, JClass, JIntArray, JLongArray, ReleaseMode};
-use jni::sys::{jboolean, jint, jlong};
-use jni::JNIEnv;
-
-use once_cell::sync::Lazy;
-use parking_lot::RwLock;
 use regex::bytes::Regex;
-use slab::Slab;
-use std::sync::Arc;
+use std::ffi::CStr;
+use std::os::raw::c_char;
+use std::sync::{Arc, LazyLock};
 
-static REGEX_CACHE: Lazy<moka::sync::Cache<String, Arc<Regex>>> = Lazy::new(|| {
-    // Global cache to avoid re-compiling regexes across multiple instances.
-    moka::sync::Cache::builder()
-        .build()
+static REGEX_CACHE: LazyLock<moka::sync::Cache<String, Arc<Regex>>> = LazyLock::new(|| {
+    moka::sync::Cache::builder().build()
 });
 
-// A handle table mapping jlong identifiers back to their compiled regex instances.
-static HANDLES: Lazy<RwLock<Slab<Arc<Regex>>>> = Lazy::new(|| RwLock::new(Slab::with_capacity(1024)));
-
-// Converts a 1-based jlong handle into a 0-based slab index.
-fn handle_to_index(handle: jlong) -> Option<usize> {
-    if handle <= 0 { None } else { Some((handle as usize) - 1) }
-}
-
-fn get_regex_from_handle(handle: jlong) -> Option<Arc<Regex>> {
-    let idx = handle_to_index(handle)?;
-    // Use a read lock to retrieve the regex instance from the global table.
-    let table = HANDLES.read();
-    table.get(idx).cloned()
-}
-
-fn throw_iae(env: &mut JNIEnv, msg: &str) {
-    let _ = env.throw_new("java/lang/IllegalArgumentException", msg);
-}
-
-#[no_mangle]
-pub extern "system" fn Java_me_naimad_fastregex_FastRegex_compile(
-    mut env: JNIEnv,
-    _cls: JClass,
-    pattern_obj: jni::objects::JString,
-) -> jlong {
-    let pattern: String = match env.get_string(&pattern_obj) {
-        Ok(s) => s.into(),
-        Err(_) => {
-            throw_iae(&mut env, "Failed to read pattern string");
-            return 0;
-        }
-    };
-
-    let re_arc: Arc<Regex> = match REGEX_CACHE.get(&pattern) {
-        Some(v) => v,
-        None => {
-            // Compile and cache the regex if not already present.
-            let compiled = match Regex::new(&pattern) {
-                Ok(r) => Arc::new(r),
-                Err(e) => {
-                    throw_iae(&mut env, &format!("Invalid regex: {e}"));
-                    return 0;
-                }
-            };
-            REGEX_CACHE.insert(pattern, compiled.clone());
-            compiled
-        }
-    };
-
-    let mut table = HANDLES.write();
-    let idx = table.insert(re_arc);
-    // Return a 1-based handle to avoid 0 being a valid handle.
-    (idx as jlong) + 1
-}
-
-#[no_mangle]
-pub extern "system" fn Java_me_naimad_fastregex_FastRegex_release(
-    mut env: JNIEnv,
-    _cls: JClass,
-    handle: jlong,
-) {
-    let Some(idx) = handle_to_index(handle) else {
-        throw_iae(&mut env, "Invalid handle");
-        return;
-    };
-    // Acquire a write lock to remove the instance and free up the slot.
-    let mut table = HANDLES.write();
-    if table.contains(idx) {
-        table.remove(idx);
-    }
-}
-
-#[no_mangle]
-pub extern "system" fn Java_me_naimad_fastregex_FastRegex_matchesUtf8Direct(
-    mut env: JNIEnv,
-    _cls: JClass,
-    handle: jlong,
-    direct_buf: JByteBuffer,
-    offset: jint,
-    len: jint,
-) -> jboolean {
-    let re = match get_regex_from_handle(handle) {
-        Some(r) => r,
-        None => {
-            throw_iae(&mut env, "Unknown/expired handle");
-            return 0;
-        }
-    };
-
-    // Access buffer metadata once to avoid redundant JNI calls.
-    let base_ptr = match env.get_direct_buffer_address(&direct_buf) {
-        Ok(p) => p,
-        Err(_) => {
-            throw_iae(&mut env, "Buffer is not a DirectByteBuffer");
-            return 0;
-        }
-    };
-    let cap = match env.get_direct_buffer_capacity(&direct_buf) {
-        Ok(c) => c as usize,
-        Err(_) => {
-            throw_iae(&mut env, "Failed to read DirectByteBuffer capacity");
-            return 0;
-        }
-    };
-
-    let off_u = offset as usize;
-    let ln_u = len as usize;
-
-    // A single check that covers both negative input and potential overflow.
-    if off_u > cap || ln_u > cap - off_u {
-        throw_iae(&mut env, "offset/len out of bounds");
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fastregex_compile(pattern: *const c_char) -> i64 {
+    if pattern.is_null() {
         return 0;
     }
 
-    // SAFETY: Bounds were validated above.
-    let slice = unsafe { std::slice::from_raw_parts(base_ptr.add(off_u), ln_u) };
+    let c_str = {
+        // SAFETY: caller must provide a valid NUL-terminated C string.
+        unsafe { CStr::from_ptr(pattern) }
+    };
+
+    let pattern_str = match c_str.to_str() {
+        Ok(s) => s,
+        Err(_) => return 0,
+    };
+
+    let re_arc: Arc<Regex> = if let Some(cached) = REGEX_CACHE.get(pattern_str) {
+        cached
+    } else {
+        match Regex::new(pattern_str) {
+            Ok(r) => {
+                let arc = Arc::new(r);
+                REGEX_CACHE.insert(pattern_str.to_string(), Arc::clone(&arc));
+                arc
+            }
+            Err(_) => return 0,
+        }
+    };
+
+    // The handle is a pointer to a Boxed Arc.
+    // Each call to compile returns a new handle that must be released.
+    // The handle keeps the Regex alive even if it's evicted from the cache.
+    let handle = Box::into_raw(Box::new(re_arc));
+    handle as i64
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fastregex_release(handle: i64) {
+    if handle == 0 {
+        return;
+    }
+    // SAFETY: handle must be a valid pointer returned by fastregex_compile and not released yet.
+    unsafe {
+        let _ = Box::from_raw(handle as *mut Arc<Regex>);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fastregex_matches_utf8(
+    handle: i64,
+    data_ptr: *const u8,
+    len: usize,
+) -> i32 {
+    if handle == 0 || data_ptr.is_null() {
+        return 0;
+    }
+
+    // SAFETY: handle must be a valid pointer to an Arc<Regex>.
+    let re_ptr = handle as *const Arc<Regex>;
+    let re = unsafe { &**re_ptr };
+
+    let slice = {
+        // SAFETY: caller must provide a valid pointer to at least `len` bytes.
+        unsafe { std::slice::from_raw_parts(data_ptr, len) }
+    };
 
     if re.is_match(slice) { 1 } else { 0 }
 }
 
-#[no_mangle]
-pub extern "system" fn Java_me_naimad_fastregex_FastRegex_batchMatchesUtf8Direct(
-    mut env: JNIEnv,
-    _cls: JClass,
-    handle: jlong,
-    data_buf: JByteBuffer,
-    offsets: JIntArray,
-    lengths: JIntArray,
-    out_bits: JLongArray,
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fastregex_batch_matches_utf8(
+    handle: i64,
+    data_ptr: *const u8,
+    data_len: usize,
+    offsets: *const i32,
+    lengths: *const i32,
+    out_bits: *mut i64,
+    num: usize,
 ) {
-    let re = match get_regex_from_handle(handle) {
-        Some(r) => r,
-        None => {
-            throw_iae(&mut env, "Unknown/expired handle");
-            return;
-        }
-    };
-
-    // Pull buffer metadata once for the whole batch.
-    let base_ptr = match env.get_direct_buffer_address(&data_buf) {
-        Ok(p) => p,
-        Err(_) => {
-            throw_iae(&mut env, "dataBuf is not a DirectByteBuffer");
-            return;
-        }
-    };
-    let cap = match env.get_direct_buffer_capacity(&data_buf) {
-        Ok(c) => c as usize,
-        Err(_) => {
-            throw_iae(&mut env, "Failed to read dataBuf capacity");
-            return;
-        }
-    };
-
-    let n = match env.get_array_length(&offsets) {
-        Ok(v) => v as usize,
-        Err(_) => {
-            throw_iae(&mut env, "Failed to read offsets length");
-            return;
-        }
-    };
-
-    let n_len = match env.get_array_length(&lengths) {
-        Ok(v) => v as usize,
-        Err(_) => {
-            throw_iae(&mut env, "Failed to read lengths length");
-            return;
-        }
-    };
-
-    if n != n_len {
-        throw_iae(&mut env, "offsets.length != lengths.length");
+    if handle == 0 || data_ptr.is_null() || offsets.is_null() || lengths.is_null() || out_bits.is_null() {
         return;
     }
 
-    let out_len = match env.get_array_length(&out_bits) {
-        Ok(v) => v as usize,
-        Err(_) => {
-            throw_iae(&mut env, "Failed to read outBits length");
-            return;
-        }
+    // SAFETY: handle must be a valid pointer to an Arc<Regex>.
+    let re_ptr = handle as *const Arc<Regex>;
+    let re = unsafe { &**re_ptr };
+
+    let data = {
+        // SAFETY: caller must provide a valid pointer to at least `data_len` bytes.
+        unsafe { std::slice::from_raw_parts(data_ptr, data_len) }
     };
 
-    let needed_words = (n + 63) / 64;
-    if out_len < needed_words {
-        throw_iae(&mut env, "outBits too small");
-        return;
-    }
+    let offsets_slice = {
+        // SAFETY: caller must provide `num` valid i32 entries.
+        unsafe { std::slice::from_raw_parts(offsets, num) }
+    };
 
-    // SAFETY: data_buf is a DirectByteBuffer, so base_ptr and cap remain valid for the call.
-    let data: &[u8] = unsafe { std::slice::from_raw_parts(base_ptr, cap) };
+    let lengths_slice = {
+        // SAFETY: caller must provide `num` valid i32 entries.
+        unsafe { std::slice::from_raw_parts(lengths, num) }
+    };
 
-    unsafe {
-        let offsets_auto = match env.get_array_elements(&offsets, ReleaseMode::NoCopyBack) {
-            Ok(a) => a,
-            Err(_) => {
-                throw_iae(&mut env, "Failed to get offsets array elements");
-                return;
+    let out_words = num.div_ceil(64);
+
+    let out_bits_slice = {
+        // SAFETY: caller must provide enough space for ceil(num / 64) i64 words.
+        unsafe { std::slice::from_raw_parts_mut(out_bits, out_words) }
+    };
+
+    out_bits_slice.iter_mut().enumerate().for_each(|(word_idx, word_out)| {
+        let mut word = 0i64;
+        let start_idx = word_idx * 64;
+        let end_idx = std::cmp::min(start_idx + 64, num);
+
+        for i in start_idx..end_idx {
+            let off = offsets_slice[i];
+            let ln = lengths_slice[i];
+
+            if off < 0 || ln < 0 {
+                continue;
             }
-        };
-        let lengths_auto = match env.get_array_elements(&lengths, ReleaseMode::NoCopyBack) {
-            Ok(a) => a,
-            Err(_) => {
-                throw_iae(&mut env, "Failed to get lengths array elements");
-                return;
-            }
-        };
-        let mut out_bits_auto = match env.get_array_elements(&out_bits, ReleaseMode::CopyBack) {
-            Ok(a) => a,
-            Err(_) => {
-                throw_iae(&mut env, "Failed to get outBits array elements");
-                return;
-            }
-        };
 
-        // Accessing as slices helps the compiler optimize and potentially vectorize the loop.
-        let offsets_slice = &*offsets_auto;
-        let lengths_slice = &*lengths_auto;
-        let out_bits_slice = &mut *out_bits_auto;
+            let off_u = off as usize;
+            let ln_u = ln as usize;
 
-        // Process matches in 64-bit chunks to match the long[] bitset layout.
-        for (word_idx, (off_chunk, len_chunk)) in offsets_slice.chunks(64).zip(lengths_slice.chunks(64)).enumerate() {
-            let mut word = 0i64;
-            for (bit_idx, (&off, &ln)) in off_chunk.iter().zip(len_chunk.iter()).enumerate() {
-                let off_u = off as usize;
-                let ln_u = ln as usize;
-
-                if off_u <= cap && ln_u <= cap - off_u {
-                    // SAFETY: Values are validated to be within data bounds.
-                    let slice = data.get_unchecked(off_u..off_u + ln_u);
-                    if re.is_match(slice) {
-                        word |= 1i64 << bit_idx;
-                    }
+            if off_u <= data_len && ln_u <= data_len.saturating_sub(off_u) {
+                let slice = &data[off_u..off_u + ln_u];
+                if re.is_match(slice) {
+                    word |= 1i64 << (i - start_idx);
                 }
             }
-            // SAFETY: word_idx is guaranteed to be within bounds.
-            *out_bits_slice.get_unchecked_mut(word_idx) = word;
         }
-    }
+
+        *word_out = word;
+    });
 }

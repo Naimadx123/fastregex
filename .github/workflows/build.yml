@@ -2,9 +2,7 @@ name: Build fastregex
 
 on:
   push:
-    branches: [ "master", "dev" ]
   pull_request:
-    branches: [ "master", "dev" ]
   workflow_dispatch:
 
 jobs:
@@ -94,7 +92,7 @@ jobs:
         # Clean any potentially downloaded .class files (though unlikely)
         rm -f me/naimad/fastregex/*.class
         # Explicitly list all source files to ensure correct compilation of dependencies
-        javac -d . me/naimad/fastregex/NativeLibLoader.java me/naimad/fastregex/FastRegex.java me/naimad/fastregex/Demo.java me/naimad/fastregex/TestLoad.java
+        javac --release 25 -d . me/naimad/fastregex/NativeLibLoader.java me/naimad/fastregex/FastRegex.java me/naimad/fastregex/Demo.java me/naimad/fastregex/TestLoad.java
         # Package classes and the package-relative native directory
         jar cvf fastregex.jar me/naimad/fastregex/*.class me/naimad/fastregex/native/
         mkdir -p ../dist

@@ -1,12 +1,12 @@
 # FastRegex
 
 A fast regex library for Java using Rust's `regex` crate under the hood
-via JNI.
+via the Java Foreign Function & Memory (FFM) API.
 
 ## Project Structure
 
--   `rust/`: Rust implementation of the JNI library.
--   `java/`: Java classes and wrapper for the native library.
+-   `rust/`: Rust implementation of the native library.
+-   `java/`: Java classes and wrapper for the native library (uses FFM `MemorySegment` for zero-copy-like transfers).
 -   `dist/`: Build artifacts (`fastregex.jar` and `fastregex.dll`).
 
 ## Building from source
@@ -51,9 +51,9 @@ To create it manually:
 2.  The library will automatically extract and load the correct native
     binary for your OS and architecture from the JAR.
 
-### Java 21+ Note (Native Access)
+### Native Access (FFM API)
 
-Starting with Java 21, the JVM issues warnings when native libraries are loaded. To suppress these warnings (and ensure future compatibility), run your application with:
+This library uses the Java Foreign Function & Memory (FFM) API. To use it, you MUST run your application with:
 
 ```bash
 java --enable-native-access=ALL-UNNAMED -cp fastregex.jar YourClass
@@ -69,27 +69,22 @@ Example code:
 ``` java
 import me.naimad.fastregex.FastRegex;
 
-// Compile a regex (once)
-long handle = FastRegex.compile("(?i)hello\\s+world.*");
-
-// Prepare a batch of strings
-String[] batch = {"hello world", "nope", "HELLO   WORLD!"};
-FastRegex.PackedUtf8 packed = FastRegex.packUtf8Direct(batch);
-
-// Allocate space for results (bitset)
-long[] outBits = new long[(batch.length + 63) / 64];
-
-// Perform batch match
-FastRegex.batchMatchesUtf8Direct(handle, packed.data, packed.offsets, packed.lengths, outBits);
-
-// Check results
-for (int i = 0; i < batch.length; i++) {
-    boolean matches = FastRegex.getBit(outBits, i);
-    System.out.println(batch[i] + " matches: " + matches);
-}
-
-// Release native resources
-FastRegex.release(handle);
+// High-level Developer Friendly API
+try (FastRegex.Regex regex = FastRegex.compile("(?i)hello\\s+world.*")) {
+    String[] batch = {"hello world", "nope", "HELLO   WORLD!"};
+    
+    // Simple batch matching
+    boolean[] results = regex.batchMatches(batch);
+    
+    for (int i = 0; i < batch.length; i++) {
+        System.out.println(batch[i] + " matches: " + results[i]);
+    }
+    
+    // Simple single matching
+    if (regex.matches("hello world!")) {
+        System.out.println("It matches!");
+    }
+} // Resources released automatically
 ```
 
 ## Running the Demo
